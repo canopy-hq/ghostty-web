@@ -29,12 +29,13 @@ import type {
   ITerminalAddon,
   ITerminalCore,
   ITerminalOptions,
+  ITheme,
   IUnicodeVersionProvider,
 } from './interfaces';
 import { LinkDetector } from './link-detector';
 import { OSC8LinkProvider } from './providers/osc8-link-provider';
 import { UrlRegexProvider } from './providers/url-regex-provider';
-import { CanvasRenderer } from './renderer';
+import { CanvasRenderer, DEFAULT_THEME } from './renderer';
 import { SelectionManager } from './selection-manager';
 import type { ILink, ILinkProvider } from './types';
 
@@ -112,6 +113,8 @@ export class Terminal implements ITerminalCore {
   // Phase 1: Title tracking
   private currentTitle: string = '';
 
+  private currentTheme!: Required<ITheme>;
+
   // Phase 2: Viewport and scrolling state
   public viewportY: number = 0; // Top line of viewport in scrollback buffer (0 = at bottom, can be fractional during smooth scroll)
   private targetViewportY: number = 0; // Target viewport position for smooth scrolling
@@ -171,6 +174,9 @@ export class Terminal implements ITerminalCore {
     this.cols = this.options.cols;
     this.rows = this.options.rows;
 
+    // Initialize accumulated theme (merge user theme with defaults)
+    this.currentTheme = { ...DEFAULT_THEME, ...options.theme };
+
     // Initialize buffer API
     this.buffer = new BufferNamespace(this);
   }
@@ -201,8 +207,20 @@ export class Terminal implements ITerminalCore {
         break;
 
       case 'theme':
-        if (this.renderer) {
-          console.warn('ghostty-web: theme changes after open() are not yet fully supported');
+        if (this.renderer && this.wasmTerm) {
+          // Merge partial theme with current accumulated theme.
+          // Null/undefined/empty resets to defaults.
+          const incoming = newValue && typeof newValue === 'object' ? newValue : {};
+          const hasProperties = Object.keys(incoming).length > 0;
+          this.currentTheme = hasProperties
+            ? { ...this.currentTheme, ...incoming }
+            : { ...DEFAULT_THEME };
+
+          // Update renderer (selection, cursor, palette colors)
+          this.renderer.setTheme(this.currentTheme);
+
+          // Update WASM terminal colors (for cell color re-resolution)
+          this.wasmTerm.setColors(this.buildThemeColorsConfig(this.currentTheme));
         }
         break;
 
@@ -295,10 +313,30 @@ export class Terminal implements ITerminalCore {
       return undefined;
     }
 
-    // Build palette array from theme colors
-    // Order: black, red, green, yellow, blue, magenta, cyan, white,
-    //        brightBlack, brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite
-    const palette: number[] = [
+    return {
+      scrollbackLimit: scrollback,
+      fgColor: this.parseColorToHex(theme?.foreground),
+      bgColor: this.parseColorToHex(theme?.background),
+      cursorColor: this.parseColorToHex(theme?.cursor),
+      palette: this.buildThemePalette(theme),
+    };
+  }
+
+  /**
+   * Build a WASM colors config from a fully-resolved theme.
+   * Unlike buildWasmConfig(), all color values are valid (no sentinel).
+   */
+  private buildThemeColorsConfig(theme: Required<ITheme>): GhosttyTerminalConfig {
+    return {
+      fgColor: this.parseColorToHex(theme.foreground),
+      bgColor: this.parseColorToHex(theme.background),
+      cursorColor: this.parseColorToHex(theme.cursor),
+      palette: this.buildThemePalette(theme),
+    };
+  }
+
+  private buildThemePalette(theme: ITheme | undefined): number[] {
+    return [
       this.parseColorToHex(theme?.black),
       this.parseColorToHex(theme?.red),
       this.parseColorToHex(theme?.green),
@@ -316,14 +354,6 @@ export class Terminal implements ITerminalCore {
       this.parseColorToHex(theme?.brightCyan),
       this.parseColorToHex(theme?.brightWhite),
     ];
-
-    return {
-      scrollbackLimit: scrollback,
-      fgColor: this.parseColorToHex(theme?.foreground),
-      bgColor: this.parseColorToHex(theme?.background),
-      cursorColor: this.parseColorToHex(theme?.cursor),
-      palette,
-    };
   }
 
   // ==========================================================================

@@ -98,7 +98,8 @@ export class CanvasRenderer {
   private fontFamily: string;
   private cursorStyle: 'block' | 'underline' | 'bar';
   private cursorBlink: boolean;
-  private theme: Required<ITheme>;
+  // Exposed as a getter for test access (see _theme getter below)
+  private _theme: Required<ITheme>;
   private devicePixelRatio: number;
   private metrics: FontMetrics;
   private palette: string[];
@@ -138,6 +139,11 @@ export class CanvasRenderer {
     endY: number;
   } | null = null;
 
+  /** Read-only access to the resolved theme — for use in tests only. */
+  get theme(): Readonly<Required<ITheme>> {
+    return this._theme;
+  }
+
   constructor(canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.canvas = canvas;
     const ctx = canvas.getContext('2d', { alpha: true });
@@ -151,27 +157,27 @@ export class CanvasRenderer {
     this.fontFamily = options.fontFamily ?? 'monospace';
     this.cursorStyle = options.cursorStyle ?? 'block';
     this.cursorBlink = options.cursorBlink ?? false;
-    this.theme = { ...DEFAULT_THEME, ...options.theme };
+    this._theme = { ...DEFAULT_THEME, ...options.theme };
     this.devicePixelRatio = options.devicePixelRatio ?? window.devicePixelRatio ?? 1;
 
     // Build color palette (16 ANSI colors)
     this.palette = [
-      this.theme.black,
-      this.theme.red,
-      this.theme.green,
-      this.theme.yellow,
-      this.theme.blue,
-      this.theme.magenta,
-      this.theme.cyan,
-      this.theme.white,
-      this.theme.brightBlack,
-      this.theme.brightRed,
-      this.theme.brightGreen,
-      this.theme.brightYellow,
-      this.theme.brightBlue,
-      this.theme.brightMagenta,
-      this.theme.brightCyan,
-      this.theme.brightWhite,
+      this._theme.black,
+      this._theme.red,
+      this._theme.green,
+      this._theme.yellow,
+      this._theme.blue,
+      this._theme.magenta,
+      this._theme.cyan,
+      this._theme.white,
+      this._theme.brightBlack,
+      this._theme.brightRed,
+      this._theme.brightGreen,
+      this._theme.brightYellow,
+      this._theme.brightBlue,
+      this._theme.brightMagenta,
+      this._theme.brightCyan,
+      this._theme.brightWhite,
     ];
 
     // Measure font metrics
@@ -253,7 +259,7 @@ export class CanvasRenderer {
     this.ctx.textAlign = 'left';
 
     // Fill background after resize
-    this.ctx.fillStyle = this.theme.background;
+    this.ctx.fillStyle = this._theme.background;
     this.ctx.fillRect(0, 0, cssWidth, cssHeight);
   }
 
@@ -523,7 +529,7 @@ export class CanvasRenderer {
     // clearRect is needed because fillRect composites rather than replaces,
     // so transparent/translucent backgrounds wouldn't clear previous content.
     this.ctx.clearRect(0, lineY, lineWidth, this.metrics.height);
-    this.ctx.fillStyle = this.theme.background;
+    this.ctx.fillStyle = this._theme.background;
     this.ctx.fillRect(0, lineY, lineWidth, this.metrics.height);
 
     // PASS 1: Draw all cell backgrounds first
@@ -559,7 +565,7 @@ export class CanvasRenderer {
 
     if (isSelected) {
       // Draw selection background (solid color, not overlay)
-      this.ctx.fillStyle = this.theme.selectionBackground;
+      this.ctx.fillStyle = this._theme.selectionBackground;
       this.ctx.fillRect(cellX, cellY, cellWidth, this.metrics.height);
       return; // Selection background replaces cell background
     }
@@ -612,7 +618,7 @@ export class CanvasRenderer {
     if (colorOverride) {
       this.ctx.fillStyle = colorOverride;
     } else if (isSelected) {
-      this.ctx.fillStyle = this.theme.selectionForeground;
+      this.ctx.fillStyle = this._theme.selectionForeground;
     } else {
       // Extract colors and handle inverse
       let fg_r = cell.fg_r,
@@ -720,7 +726,7 @@ export class CanvasRenderer {
     const cursorX = x * this.metrics.width;
     const cursorY = y * this.metrics.height;
 
-    this.ctx.fillStyle = this.theme.cursor;
+    this.ctx.fillStyle = this._theme.cursor;
 
     switch (this.cursorStyle) {
       case 'block':
@@ -734,7 +740,7 @@ export class CanvasRenderer {
             this.ctx.beginPath();
             this.ctx.rect(cursorX, cursorY, this.metrics.width, this.metrics.height);
             this.ctx.clip();
-            this.renderCellText(line[x], x, y, this.theme.cursorAccent);
+            this.renderCellText(line[x], x, y, this._theme.cursorAccent);
             this.ctx.restore();
           }
         }
@@ -786,27 +792,27 @@ export class CanvasRenderer {
   /**
    * Update theme colors
    */
-  public setTheme(theme: ITheme): void {
-    this.theme = { ...DEFAULT_THEME, ...theme };
+  public setTheme(theme: Required<ITheme>): void {
+    this._theme = theme;
 
     // Rebuild palette
     this.palette = [
-      this.theme.black,
-      this.theme.red,
-      this.theme.green,
-      this.theme.yellow,
-      this.theme.blue,
-      this.theme.magenta,
-      this.theme.cyan,
-      this.theme.white,
-      this.theme.brightBlack,
-      this.theme.brightRed,
-      this.theme.brightGreen,
-      this.theme.brightYellow,
-      this.theme.brightBlue,
-      this.theme.brightMagenta,
-      this.theme.brightCyan,
-      this.theme.brightWhite,
+      this._theme.black,
+      this._theme.red,
+      this._theme.green,
+      this._theme.yellow,
+      this._theme.blue,
+      this._theme.magenta,
+      this._theme.cyan,
+      this._theme.white,
+      this._theme.brightBlack,
+      this._theme.brightRed,
+      this._theme.brightGreen,
+      this._theme.brightYellow,
+      this._theme.brightBlue,
+      this._theme.brightMagenta,
+      this._theme.brightCyan,
+      this._theme.brightWhite,
     ];
   }
 
@@ -873,7 +879,7 @@ export class CanvasRenderer {
 
     // Always clear the scrollbar area first (fixes ghosting when fading out)
     ctx.clearRect(scrollbarX - 2, 0, scrollbarWidth + 6, canvasHeight);
-    ctx.fillStyle = this.theme.background;
+    ctx.fillStyle = this._theme.background;
     ctx.fillRect(scrollbarX - 2, 0, scrollbarWidth + 6, canvasHeight);
 
     // Don't draw scrollbar if fully transparent or no scrollback
@@ -988,7 +994,7 @@ export class CanvasRenderer {
     // clearRect first because fillRect composites rather than replaces,
     // so transparent/translucent backgrounds wouldn't clear previous content.
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.ctx.fillStyle = this.theme.background;
+    this.ctx.fillStyle = this._theme.background;
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
