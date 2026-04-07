@@ -3028,14 +3028,10 @@ describe('Dynamic Theme Changes', () => {
       red: '#aa0000',
     };
 
-    // @ts-ignore - accessing private for test
     const renderer = term.renderer;
-    // @ts-ignore - accessing private for test
-    expect(renderer.theme.background).toBe('#ff0000');
-    // @ts-ignore - accessing private for test
-    expect(renderer.theme.foreground).toBe('#00ff00');
-    // @ts-ignore - accessing private for test
-    expect(renderer.theme.cursor).toBe('#0000ff');
+    expect(renderer!.theme.background).toBe('#ff0000');
+    expect(renderer!.theme.foreground).toBe('#00ff00');
+    expect(renderer!.theme.cursor).toBe('#0000ff');
 
     term.dispose();
   });
@@ -3075,16 +3071,13 @@ describe('Dynamic Theme Changes', () => {
     // First: change background only
     term.options.theme = { background: '#111111' };
 
-    // @ts-ignore - accessing private for test
-    expect(term.renderer.theme.background).toBe('#111111');
+    expect(term.renderer!.theme.background).toBe('#111111');
 
     // Second: change foreground only — background should be preserved
     term.options.theme = { foreground: '#222222' };
 
-    // @ts-ignore - accessing private for test
-    expect(term.renderer.theme.background).toBe('#111111');
-    // @ts-ignore - accessing private for test
-    expect(term.renderer.theme.foreground).toBe('#222222');
+    expect(term.renderer!.theme.background).toBe('#111111');
+    expect(term.renderer!.theme.foreground).toBe('#222222');
 
     term.dispose();
   });
@@ -3099,8 +3092,7 @@ describe('Dynamic Theme Changes', () => {
     term.options.theme = { foreground: '#bbbbbb' };
     term.options.theme = { cursor: '#cccccc' };
 
-    // @ts-ignore - accessing private for test
-    const theme = term.renderer.theme;
+    const theme = term.renderer!.theme;
     expect(theme.background).toBe('#aaaaaa');
     expect(theme.foreground).toBe('#bbbbbb');
     expect(theme.cursor).toBe('#cccccc');
@@ -3116,16 +3108,13 @@ describe('Dynamic Theme Changes', () => {
     });
     term.open(container);
 
-    // @ts-ignore - accessing private for test
-    expect(term.renderer.theme.background).toBe('#ff0000');
+    expect(term.renderer!.theme.background).toBe('#ff0000');
 
     // Reset to empty — should restore defaults
     term.options.theme = {};
 
-    // @ts-ignore - accessing private for test
-    expect(term.renderer.theme.background).toBe('#1e1e1e');
-    // @ts-ignore - accessing private for test
-    expect(term.renderer.theme.foreground).toBe('#d4d4d4');
+    expect(term.renderer!.theme.background).toBe('#1e1e1e');
+    expect(term.renderer!.theme.foreground).toBe('#d4d4d4');
 
     term.dispose();
   });
@@ -3138,14 +3127,12 @@ describe('Dynamic Theme Changes', () => {
     });
     term.open(container);
 
-    // @ts-ignore - accessing private for test
-    expect(term.renderer.theme.background).toBe('#ff0000');
+    expect(term.renderer!.theme.background).toBe('#ff0000');
 
     // Reset to null
     term.options.theme = null as any;
 
-    // @ts-ignore - accessing private for test
-    expect(term.renderer.theme.background).toBe('#1e1e1e');
+    expect(term.renderer!.theme.background).toBe('#1e1e1e');
 
     term.dispose();
   });
@@ -3164,8 +3151,7 @@ describe('Dynamic Theme Changes', () => {
     term.open(container);
 
     // The buildWasmConfig reads from options.theme which is now #222222
-    // @ts-ignore - accessing private for test
-    expect(term.renderer.theme.background).toBe('#222222');
+    expect(term.renderer!.theme.background).toBe('#222222');
 
     term.dispose();
   });
@@ -3264,8 +3250,7 @@ describe('Dynamic Theme Changes', () => {
       red: '',
     };
 
-    // @ts-ignore - accessing private for test
-    expect(term.renderer.theme.background).toBe('not-a-color');
+    expect(term.renderer!.theme.background).toBe('not-a-color');
 
     term.dispose();
   });

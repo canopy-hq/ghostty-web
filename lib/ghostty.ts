@@ -376,6 +376,14 @@ export class GhosttyTerminal {
       const view = new DataView(this.memory.buffer);
       let offset = configPtr;
 
+      // Layout must match GhosttyTerminalConfig in src/terminal/c/terminal.zig:
+      //   scrollback_limit: u32  (+0)
+      //   fg_color:         u32  (+4)
+      //   bg_color:         u32  (+8)
+      //   cursor_color:     u32  (+12)
+      //   palette:          [16]u32 (+16..+79)
+      // Total: 80 bytes. Any struct change in Zig must be mirrored here.
+
       // scrollback_limit (u32) — ignored by setColors but must be present in struct
       view.setUint32(offset, 0, true);
       offset += 4;

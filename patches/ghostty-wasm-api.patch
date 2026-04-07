@@ -987,12 +987,12 @@ index 000000000..1ce4f1919
 +/// Returns dirty state: 0=none, 1=partial, 2=full
 +pub fn renderStateUpdate(ptr: ?*anyopaque) callconv(.c) GhosttyDirty {
 +    const wrapper: *TerminalWrapper = @ptrCast(@alignCast(ptr orelse return .full));
-+    
++
 +    // Detect screen buffer switch (normal <-> alternate)
 +    const current_is_alternate = wrapper.terminal.screens.active_key == .alternate;
 +    const screen_switched = current_is_alternate != wrapper.last_screen_is_alternate;
 +    wrapper.last_screen_is_alternate = current_is_alternate;
-+    
++
 +    // When screen switches or colors change, we must fully reset the render
 +    // state to avoid stale cached cell data.
 +    const needs_full_reset = screen_switched or wrapper.force_full_redraw;
@@ -1008,7 +1008,7 @@ index 000000000..1ce4f1919
 +    if (needs_full_reset) {
 +        return .full;
 +    }
-+    
++
 +    return switch (wrapper.render_state.dirty) {
 +        .false => .none,
 +        .partial => .partial,
