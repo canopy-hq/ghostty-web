@@ -288,35 +288,9 @@ export class GhosttyTerminal {
       }
 
       try {
-        // Write config to WASM memory
-        const view = new DataView(this.memory.buffer);
-        let offset = configPtr;
-
-        // scrollback_limit (u32)
-        view.setUint32(offset, config.scrollbackLimit ?? 10000, true);
-        offset += 4;
-
-        // fg_color (u32)
-        view.setUint32(offset, config.fgColor ?? 0, true);
-        offset += 4;
-
-        // bg_color (u32)
-        view.setUint32(offset, config.bgColor ?? 0, true);
-        offset += 4;
-
-        // cursor_color (u32)
-        view.setUint32(offset, config.cursorColor ?? 0, true);
-        offset += 4;
-
-        // palette[16] (u32 * 16)
-        for (let i = 0; i < 16; i++) {
-          view.setUint32(offset, config.palette?.[i] ?? 0, true);
-          offset += 4;
-        }
-
+        this.writeConfigToPtr(configPtr, config);
         this.handle = this.exports.ghostty_terminal_new_with_config(cols, rows, configPtr);
       } finally {
-        // Free the config memory
         this.exports.ghostty_wasm_free_u8_array(configPtr, GHOSTTY_CONFIG_SIZE);
       }
     } else {
@@ -373,42 +347,40 @@ export class GhosttyTerminal {
     if (configPtr === 0) return;
 
     try {
-      const view = new DataView(this.memory.buffer);
-      let offset = configPtr;
-
-      // Layout must match GhosttyTerminalConfig in src/terminal/c/terminal.zig:
-      //   scrollback_limit: u32  (+0)
-      //   fg_color:         u32  (+4)
-      //   bg_color:         u32  (+8)
-      //   cursor_color:     u32  (+12)
-      //   palette:          [16]u32 (+16..+79)
-      // Total: 80 bytes. Any struct change in Zig must be mirrored here.
-
-      // scrollback_limit (u32) — ignored by setColors but must be present in struct
-      view.setUint32(offset, 0, true);
-      offset += 4;
-
-      // fg_color (u32)
-      view.setUint32(offset, config.fgColor ?? 0, true);
-      offset += 4;
-
-      // bg_color (u32)
-      view.setUint32(offset, config.bgColor ?? 0, true);
-      offset += 4;
-
-      // cursor_color (u32)
-      view.setUint32(offset, config.cursorColor ?? 0, true);
-      offset += 4;
-
-      // palette[16] (u32 * 16)
-      for (let i = 0; i < 16; i++) {
-        view.setUint32(offset, config.palette?.[i] ?? 0, true);
-        offset += 4;
-      }
-
+      this.writeConfigToPtr(configPtr, config);
       this.exports.ghostty_terminal_set_colors(this.handle, configPtr);
     } finally {
       this.exports.ghostty_wasm_free_u8_array(configPtr, GHOSTTY_CONFIG_SIZE);
+    }
+  }
+
+  /**
+   * Write a GhosttyTerminalConfig into WASM memory at configPtr.
+   *
+   * Layout must match GhosttyTerminalConfig in src/terminal/c/terminal.zig:
+   *   scrollback_limit: u32  (+0)
+   *   fg_color:         u32  (+4)
+   *   bg_color:         u32  (+8)
+   *   cursor_color:     u32  (+12)
+   *   palette:          [16]u32 (+16..+79)
+   * Total: 80 bytes. Any struct change in Zig must be mirrored here.
+   */
+  private writeConfigToPtr(configPtr: number, config: GhosttyTerminalConfig): void {
+    const view = new DataView(this.memory.buffer);
+    let offset = configPtr;
+
+    view.setUint32(offset, config.scrollbackLimit ?? 0, true);
+    offset += 4;
+    view.setUint32(offset, config.fgColor ?? 0, true);
+    offset += 4;
+    view.setUint32(offset, config.bgColor ?? 0, true);
+    offset += 4;
+    view.setUint32(offset, config.cursorColor ?? 0, true);
+    offset += 4;
+
+    for (let i = 0; i < 16; i++) {
+      view.setUint32(offset, config.palette?.[i] ?? 0, true);
+      offset += 4;
     }
   }
 

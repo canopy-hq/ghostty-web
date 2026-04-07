@@ -792,8 +792,8 @@ export class CanvasRenderer {
   /**
    * Update theme colors
    */
-  public setTheme(theme: ITheme): void {
-    this._theme = { ...DEFAULT_THEME, ...theme };
+  public setTheme(theme: Required<ITheme>): void {
+    this._theme = theme;
 
     // Rebuild palette
     this.palette = [

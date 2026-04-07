@@ -113,8 +113,7 @@ export class Terminal implements ITerminalCore {
   // Phase 1: Title tracking
   private currentTitle: string = '';
 
-  // Accumulated theme state for partial merge support
-  private currentTheme: Required<ITheme> = { ...DEFAULT_THEME };
+  private currentTheme!: Required<ITheme>;
 
   // Phase 2: Viewport and scrolling state
   public viewportY: number = 0; // Top line of viewport in scrollback buffer (0 = at bottom, can be fractional during smooth scroll)
@@ -314,10 +313,30 @@ export class Terminal implements ITerminalCore {
       return undefined;
     }
 
-    // Build palette array from theme colors
-    // Order: black, red, green, yellow, blue, magenta, cyan, white,
-    //        brightBlack, brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite
-    const palette: number[] = [
+    return {
+      scrollbackLimit: scrollback,
+      fgColor: this.parseColorToHex(theme?.foreground),
+      bgColor: this.parseColorToHex(theme?.background),
+      cursorColor: this.parseColorToHex(theme?.cursor),
+      palette: this.buildThemePalette(theme),
+    };
+  }
+
+  /**
+   * Build a WASM colors config from a fully-resolved theme.
+   * Unlike buildWasmConfig(), all color values are valid (no sentinel).
+   */
+  private buildThemeColorsConfig(theme: Required<ITheme>): GhosttyTerminalConfig {
+    return {
+      fgColor: this.parseColorToHex(theme.foreground),
+      bgColor: this.parseColorToHex(theme.background),
+      cursorColor: this.parseColorToHex(theme.cursor),
+      palette: this.buildThemePalette(theme),
+    };
+  }
+
+  private buildThemePalette(theme: ITheme | undefined): number[] {
+    return [
       this.parseColorToHex(theme?.black),
       this.parseColorToHex(theme?.red),
       this.parseColorToHex(theme?.green),
@@ -335,44 +354,6 @@ export class Terminal implements ITerminalCore {
       this.parseColorToHex(theme?.brightCyan),
       this.parseColorToHex(theme?.brightWhite),
     ];
-
-    return {
-      scrollbackLimit: scrollback,
-      fgColor: this.parseColorToHex(theme?.foreground),
-      bgColor: this.parseColorToHex(theme?.background),
-      cursorColor: this.parseColorToHex(theme?.cursor),
-      palette,
-    };
-  }
-
-  /**
-   * Build a WASM colors config from a fully-resolved theme.
-   * Unlike buildWasmConfig(), all color values are valid (no sentinel).
-   */
-  private buildThemeColorsConfig(theme: Required<ITheme>): GhosttyTerminalConfig {
-    return {
-      fgColor: this.parseColorToHex(theme.foreground),
-      bgColor: this.parseColorToHex(theme.background),
-      cursorColor: this.parseColorToHex(theme.cursor),
-      palette: [
-        this.parseColorToHex(theme.black),
-        this.parseColorToHex(theme.red),
-        this.parseColorToHex(theme.green),
-        this.parseColorToHex(theme.yellow),
-        this.parseColorToHex(theme.blue),
-        this.parseColorToHex(theme.magenta),
-        this.parseColorToHex(theme.cyan),
-        this.parseColorToHex(theme.white),
-        this.parseColorToHex(theme.brightBlack),
-        this.parseColorToHex(theme.brightRed),
-        this.parseColorToHex(theme.brightGreen),
-        this.parseColorToHex(theme.brightYellow),
-        this.parseColorToHex(theme.brightBlue),
-        this.parseColorToHex(theme.brightMagenta),
-        this.parseColorToHex(theme.brightCyan),
-        this.parseColorToHex(theme.brightWhite),
-      ],
-    };
   }
 
   // ==========================================================================
