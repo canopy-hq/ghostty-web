@@ -1,11 +1,11 @@
 diff --git a/.gitignore b/.gitignore
-index e451b171a..89c623d8b 100644
+index 74f3f85eb..a1a9b7665 100644
 --- a/.gitignore
 +++ b/.gitignore
-@@ -23,3 +23,4 @@ glad.zip
- /ghostty.qcow2
+@@ -26,3 +26,4 @@ glad.zip
  
  vgcore.*
+ 
 +node_modules/
 diff --git a/include/ghostty/vt.h b/include/ghostty/vt.h
 index 4f8fef88e..ca9fb1d4d 100644
@@ -326,10 +326,10 @@ index 000000000..c0a9c6604
 +
 +#endif /* GHOSTTY_VT_TERMINAL_H */
 diff --git a/src/lib_vt.zig b/src/lib_vt.zig
-index 03a883e20..9d74a46dc 100644
+index 426660621..a238a6a2f 100644
 --- a/src/lib_vt.zig
 +++ b/src/lib_vt.zig
-@@ -140,6 +140,46 @@ comptime {
+@@ -143,6 +143,46 @@ comptime {
          @export(&c.sgr_unknown_partial, .{ .name = "ghostty_sgr_unknown_partial" });
          @export(&c.sgr_attribute_tag, .{ .name = "ghostty_sgr_attribute_tag" });
          @export(&c.sgr_attribute_value, .{ .name = "ghostty_sgr_attribute_value" });
@@ -446,7 +446,7 @@ index bc92597f5..5814a0559 100644
      _ = @import("../../lib/allocator.zig");
 diff --git a/src/terminal/c/terminal.zig b/src/terminal/c/terminal.zig
 new file mode 100644
-index 000000000..1ce4f1919
+index 000000000..5112bae7a
 --- /dev/null
 +++ b/src/terminal/c/terminal.zig
 @@ -0,0 +1,1168 @@
@@ -566,10 +566,10 @@ index 000000000..1ce4f1919
 +            .insert_lines => self.terminal.insertLines(value),
 +            .insert_blanks => self.terminal.insertBlanks(value),
 +            .delete_lines => self.terminal.deleteLines(value),
-+            .scroll_up => self.terminal.scrollUp(value),
++            .scroll_up => try self.terminal.scrollUp(value),
 +            .scroll_down => self.terminal.scrollDown(value),
-+            .horizontal_tab => try self.horizontalTab(value),
-+            .horizontal_tab_back => try self.horizontalTabBack(value),
++            .horizontal_tab => self.horizontalTab(value),
++            .horizontal_tab_back => self.horizontalTabBack(value),
 +            .tab_clear_current => self.terminal.tabClear(.current),
 +            .tab_clear_all => self.terminal.tabClear(.all),
 +            .tab_set => self.terminal.tabSet(),
@@ -591,7 +591,7 @@ index 000000000..1ce4f1919
 +                }
 +            },
 +            .save_cursor => self.terminal.saveCursor(),
-+            .restore_cursor => try self.terminal.restoreCursor(),
++            .restore_cursor => self.terminal.restoreCursor(),
 +            .invoke_charset => self.terminal.invokeCharset(value.bank, value.charset, value.locking),
 +            .configure_charset => self.terminal.configureCharset(value.slot, value.charset),
 +            .set_attribute => switch (value) {
@@ -619,14 +619,9 @@ index 000000000..1ce4f1919
 +            .full_reset => self.terminal.fullReset(),
 +            .start_hyperlink => try self.terminal.screens.active.startHyperlink(value.uri, value.id),
 +            .end_hyperlink => self.terminal.screens.active.endHyperlink(),
-+            .prompt_start => {
-+                self.terminal.screens.active.cursor.page_row.semantic_prompt = .prompt;
-+                self.terminal.flags.shell_redraws_prompt = value.redraw;
++            .semantic_prompt => self.terminal.semanticPrompt(value) catch |err| {
++                log.warn("error handling semantic prompt: {}", .{err});
 +            },
-+            .prompt_continuation => self.terminal.screens.active.cursor.page_row.semantic_prompt = .prompt_continuation,
-+            .prompt_end => self.terminal.markSemanticPrompt(.input),
-+            .end_of_input => self.terminal.markSemanticPrompt(.command),
-+            .end_of_command => self.terminal.screens.active.cursor.page_row.semantic_prompt = .input,
 +            .mouse_shape => self.terminal.mouse_shape = value,
 +            .color_operation => try self.colorOperation(value.op, &value.requests),
 +            .kitty_color_report => try self.kittyColorOperation(value),
@@ -706,18 +701,18 @@ index 000000000..1ce4f1919
 +        }
 +    }
 +
-+    inline fn horizontalTab(self: *ResponseHandler, count: u16) !void {
++    inline fn horizontalTab(self: *ResponseHandler, count: u16) void {
 +        for (0..count) |_| {
 +            const x = self.terminal.screens.active.cursor.x;
-+            try self.terminal.horizontalTab();
++            self.terminal.horizontalTab();
 +            if (x == self.terminal.screens.active.cursor.x) break;
 +        }
 +    }
 +
-+    inline fn horizontalTabBack(self: *ResponseHandler, count: u16) !void {
++    inline fn horizontalTabBack(self: *ResponseHandler, count: u16) void {
 +        for (0..count) |_| {
 +            const x = self.terminal.screens.active.cursor.x;
-+            try self.terminal.horizontalTabBack();
++            self.terminal.horizontalTabBack();
 +            if (x == self.terminal.screens.active.cursor.x) break;
 +        }
 +    }
@@ -737,7 +732,7 @@ index 000000000..1ce4f1919
 +            .save_cursor => if (enabled) {
 +                self.terminal.saveCursor();
 +            } else {
-+                try self.terminal.restoreCursor();
++                self.terminal.restoreCursor();
 +            },
 +            .enable_mode_3 => {},
 +            .@"132_column" => try self.terminal.deccolm(
@@ -1618,8 +1613,29 @@ index 000000000..1ce4f1919
 +    try std.testing.expectEqual(@as(u32, 'l'), cells[3].codepoint);
 +    try std.testing.expectEqual(@as(u32, 'o'), cells[4].codepoint);
 +}
+diff --git a/src/terminal/osc/parsers/semantic_prompt.zig b/src/terminal/osc/parsers/semantic_prompt.zig
+index d3a117515..b74b6e5a2 100644
+--- a/src/terminal/osc/parsers/semantic_prompt.zig
++++ b/src/terminal/osc/parsers/semantic_prompt.zig
+@@ -28,6 +28,16 @@ pub const Command = struct {
+         end_command, // 'D'
+     };
+ 
++    /// C ABI representation for use in extern unions (options_unvalidated
++    /// is a slice and cannot be part of an extern union directly).
++    pub const C = extern struct {
++        action: u8,
++    };
++
++    pub fn cval(self: Command) C {
++        return .{ .action = @intFromEnum(self.action) };
++    }
++
+     pub fn init(action: Action) Command {
+         return .{
+             .action = action,
 diff --git a/src/terminal/render.zig b/src/terminal/render.zig
-index b6430ea34..10e0ef79d 100644
+index 2332866ac..dcfa15f57 100644
 --- a/src/terminal/render.zig
 +++ b/src/terminal/render.zig
 @@ -322,13 +322,14 @@ pub const RenderState = struct {
