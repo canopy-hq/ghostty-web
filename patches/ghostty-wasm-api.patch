@@ -2,11 +2,10 @@ diff --git a/.gitignore b/.gitignore
 index 74f3f85eb..a1a9b7665 100644
 --- a/.gitignore
 +++ b/.gitignore
-@@ -26,3 +26,5 @@ glad.zip
+@@ -26,3 +26,4 @@ glad.zip
  
  vgcore.*
  
-+node_modules/
 +node_modules/
 diff --git a/include/ghostty/vt.h b/include/ghostty/vt.h
 index 4f8fef88e..ca9fb1d4d 100644
