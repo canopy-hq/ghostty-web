@@ -1,6 +1,6 @@
 {
-  "name": "ghostty-web",
-  "version": "0.3.0",
+  "name": "@canopy-hq/ghostty-web",
+  "version": "0.5.0",
   "description": "Web-based terminal emulator using Ghostty's VT100 parser via WebAssembly",
   "type": "module",
   "main": "./dist/ghostty-web.umd.cjs",
@@ -40,7 +40,8 @@
   "license": "MIT",
   "author": "Coder",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
     "dev": "vite --port 8000",
