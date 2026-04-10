@@ -101,7 +101,7 @@ export class CanvasRenderer {
   private theme: Required<ITheme>;
   private devicePixelRatio: number;
   private metrics: FontMetrics;
-  private palette: string[];
+  private fontStrings: { plain: string; bold: string; italic: string; boldItalic: string };
 
   // Cursor blinking state
   private cursorVisible: boolean = true;
@@ -154,27 +154,8 @@ export class CanvasRenderer {
     this.theme = { ...DEFAULT_THEME, ...options.theme };
     this.devicePixelRatio = options.devicePixelRatio ?? window.devicePixelRatio ?? 1;
 
-    // Build color palette (16 ANSI colors)
-    this.palette = [
-      this.theme.black,
-      this.theme.red,
-      this.theme.green,
-      this.theme.yellow,
-      this.theme.blue,
-      this.theme.magenta,
-      this.theme.cyan,
-      this.theme.white,
-      this.theme.brightBlack,
-      this.theme.brightRed,
-      this.theme.brightGreen,
-      this.theme.brightYellow,
-      this.theme.brightBlue,
-      this.theme.brightMagenta,
-      this.theme.brightCyan,
-      this.theme.brightWhite,
-    ];
-
-    // Measure font metrics
+    // Measure font metrics (also builds cached font strings)
+    this.fontStrings = this.buildFontStrings();
     this.metrics = this.measureFont();
 
     // Setup cursor blinking if enabled
@@ -187,26 +168,32 @@ export class CanvasRenderer {
   // Font Metrics Measurement
   // ==========================================================================
 
-  /**
-   * Build a CSS font string with proper quoting for font families with spaces.
-   * Example: "Fira Code, monospace" -> '"Fira Code", monospace'
-   */
-  private buildFontString(style: string = ''): string {
+  private buildFontStrings(): { plain: string; bold: string; italic: string; boldItalic: string } {
     // Quote font family names that contain spaces but aren't already quoted
     const quotedFamily = this.fontFamily
       .split(',')
       .map((f) => {
         const trimmed = f.trim();
-        // Already quoted or a generic family (no spaces)
         if (trimmed.startsWith('"') || trimmed.startsWith("'") || !trimmed.includes(' ')) {
           return trimmed;
         }
-        // Quote it
         return `"${trimmed}"`;
       })
       .join(', ');
+    const base = `${this.fontSize}px ${quotedFamily}`;
+    return {
+      plain: base,
+      bold: `bold ${base}`,
+      italic: `italic ${base}`,
+      boldItalic: `bold italic ${base}`,
+    };
+  }
 
-    return `${style}${this.fontSize}px ${quotedFamily}`;
+  private getFontString(bold: boolean, italic: boolean): string {
+    if (bold && italic) return this.fontStrings.boldItalic;
+    if (bold) return this.fontStrings.bold;
+    if (italic) return this.fontStrings.italic;
+    return this.fontStrings.plain;
   }
 
   private measureFont(): FontMetrics {
@@ -215,7 +202,7 @@ export class CanvasRenderer {
     const ctx = canvas.getContext('2d')!;
 
     // Set font (use actual pixel size for accurate measurement)
-    ctx.font = this.buildFontString();
+    ctx.font = this.fontStrings.plain;
 
     // Measure width using 'M' (typically widest character)
     const widthMetrics = ctx.measureText('M');
@@ -384,8 +371,13 @@ export class CanvasRenderer {
     // Track rows with hyperlinks that need redraw when hover changes
     const hyperlinkRows = new Set<number>();
     const hyperlinkChanged = this.hoveredHyperlinkId !== this.previousHoveredHyperlinkId;
-    const linkRangeChanged =
-      JSON.stringify(this.hoveredLinkRange) !== JSON.stringify(this.previousHoveredLinkRange);
+    const linkRangeChanged = (() => {
+      const a = this.hoveredLinkRange;
+      const b = this.previousHoveredLinkRange;
+      if (a === b) return false;
+      if (!a || !b) return true;
+      return a.startX !== b.startX || a.startY !== b.startY || a.endX !== b.endX || a.endY !== b.endY;
+    })();
 
     if (hyperlinkChanged) {
       // Find rows containing the old or new hovered hyperlink
@@ -616,6 +608,15 @@ export class CanvasRenderer {
     }
   }
 
+  private drawHorizontalLine(x: number, y: number, width: number, color: string): void {
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = 1;
+    this.ctx.beginPath();
+    this.ctx.moveTo(x, y);
+    this.ctx.lineTo(x + width, y);
+    this.ctx.stroke();
+  }
+
   /**
    * Render a cell's text and decorations (Pass 2 of two-pass rendering)
    * Selection foreground color is applied here to match the selection background.
@@ -633,23 +634,10 @@ export class CanvasRenderer {
     // Check if this cell is selected
     const isSelected = this.isInSelection(x, y);
 
-    // Set text style
-    let fontStyle = '';
-    if (cell.flags & CellFlags.ITALIC) fontStyle += 'italic ';
-    if (cell.flags & CellFlags.BOLD) fontStyle += 'bold ';
-    this.ctx.font = this.buildFontString(fontStyle);
-
-    // Extract colors and handle inverse
-    let fg_r = cell.fg_r,
-      fg_g = cell.fg_g,
-      fg_b = cell.fg_b;
-
-    if (cell.flags & CellFlags.INVERSE) {
-      // When inverted, foreground becomes background
-      fg_r = cell.bg_r;
-      fg_g = cell.bg_g;
-      fg_b = cell.bg_b;
-    }
+    this.ctx.font = this.getFontString(
+      !!(cell.flags & CellFlags.BOLD),
+      !!(cell.flags & CellFlags.ITALIC)
+    );
 
     // Set text color - use override if provided, otherwise selection or cell color
     if (colorOverride) {
@@ -657,6 +645,10 @@ export class CanvasRenderer {
     } else if (isSelected) {
       this.ctx.fillStyle = this.theme.selectionForeground;
     } else {
+      let fg_r = cell.fg_r, fg_g = cell.fg_g, fg_b = cell.fg_b;
+      if (cell.flags & CellFlags.INVERSE) {
+        fg_r = cell.bg_r; fg_g = cell.bg_g; fg_b = cell.bg_b;
+      }
       this.ctx.fillStyle = this.rgbToCSS(fg_r, fg_g, fg_b);
     }
 
@@ -669,25 +661,21 @@ export class CanvasRenderer {
     const textX = cellX;
     const textY = cellY + this.metrics.baseline;
 
-    // Get the character to render - use grapheme lookup for complex scripts
-    let char: string;
-    if (cell.grapheme_len > 0 && this.currentBuffer?.getGraphemeString) {
-      // Cell has additional codepoints - get full grapheme cluster
-      char = this.currentBuffer.getGraphemeString(y, x);
-    } else {
-      // Simple cell - single codepoint
-      char = String.fromCodePoint(cell.codepoint || 32); // Default to space if null
-    }
+    const codepoint = cell.codepoint || 32;
 
     // Handle special characters that need pixel-perfect rendering:
     // - Block drawing characters (U+2580-U+259F): rectangles for gap-free ASCII art
     // - Powerline glyphs (U+E0B0-U+E0BF): vector shapes to match exact cell height
-    const codepoint = cell.codepoint || 32;
-    if (this.renderBlockChar(codepoint, cellX, cellY, cellWidth)) {
-      // Block character was rendered as a rectangle, skip font rendering
-    } else if (this.renderPowerlineGlyph(codepoint, cellX, cellY, cellWidth)) {
-      // Powerline glyph was rendered as a vector shape, skip font rendering
+    if (codepoint >= 0x2580 && codepoint <= 0x259f && this.renderBlockChar(codepoint, cellX, cellY, cellWidth)) {
+      // rendered as rectangle
+    } else if (codepoint >= 0xe0b0 && codepoint <= 0xe0bf && this.renderPowerlineGlyph(codepoint, cellX, cellY, cellWidth)) {
+      // rendered as vector path
     } else {
+      // Use grapheme lookup for complex scripts, single codepoint otherwise
+      const char =
+        cell.grapheme_len > 0 && this.currentBuffer?.getGraphemeString
+          ? this.currentBuffer.getGraphemeString(y, x)
+          : String.fromCodePoint(codepoint);
       this.ctx.fillText(char, textX, textY);
     }
 
@@ -696,61 +684,26 @@ export class CanvasRenderer {
       this.ctx.globalAlpha = 1.0;
     }
 
-    // Draw underline
+    const fillColor = this.ctx.fillStyle as string;
+    const underlineY = cellY + this.metrics.baseline + 2;
+
     if (cell.flags & CellFlags.UNDERLINE) {
-      const underlineY = cellY + this.metrics.baseline + 2;
-      this.ctx.strokeStyle = this.ctx.fillStyle;
-      this.ctx.lineWidth = 1;
-      this.ctx.beginPath();
-      this.ctx.moveTo(cellX, underlineY);
-      this.ctx.lineTo(cellX + cellWidth, underlineY);
-      this.ctx.stroke();
+      this.drawHorizontalLine(cellX, underlineY, cellWidth, fillColor);
     }
-
-    // Draw strikethrough
     if (cell.flags & CellFlags.STRIKETHROUGH) {
-      const strikeY = cellY + this.metrics.height / 2;
-      this.ctx.strokeStyle = this.ctx.fillStyle;
-      this.ctx.lineWidth = 1;
-      this.ctx.beginPath();
-      this.ctx.moveTo(cellX, strikeY);
-      this.ctx.lineTo(cellX + cellWidth, strikeY);
-      this.ctx.stroke();
+      this.drawHorizontalLine(cellX, cellY + this.metrics.height / 2, cellWidth, fillColor);
     }
-
-    // Draw hyperlink underline (for OSC8 hyperlinks)
-    if (cell.hyperlink_id > 0) {
-      const isHovered = cell.hyperlink_id === this.hoveredHyperlinkId;
-
-      // Only show underline when hovered (cleaner look)
-      if (isHovered) {
-        const underlineY = cellY + this.metrics.baseline + 2;
-        this.ctx.strokeStyle = '#4A90E2'; // Blue underline on hover
-        this.ctx.lineWidth = 1;
-        this.ctx.beginPath();
-        this.ctx.moveTo(cellX, underlineY);
-        this.ctx.lineTo(cellX + cellWidth, underlineY);
-        this.ctx.stroke();
-      }
+    if (cell.hyperlink_id > 0 && cell.hyperlink_id === this.hoveredHyperlinkId) {
+      this.drawHorizontalLine(cellX, underlineY, cellWidth, '#4A90E2');
     }
-
-    // Draw regex link underline (for plain text URLs)
     if (this.hoveredLinkRange) {
       const range = this.hoveredLinkRange;
-      // Check if this cell is within the hovered link range
       const isInRange =
         (y === range.startY && x >= range.startX && (y < range.endY || x <= range.endX)) ||
         (y > range.startY && y < range.endY) ||
         (y === range.endY && x <= range.endX && (y > range.startY || x >= range.startX));
-
       if (isInRange) {
-        const underlineY = cellY + this.metrics.baseline + 2;
-        this.ctx.strokeStyle = '#4A90E2'; // Blue underline on hover
-        this.ctx.lineWidth = 1;
-        this.ctx.beginPath();
-        this.ctx.moveTo(cellX, underlineY);
-        this.ctx.lineTo(cellX + cellWidth, underlineY);
-        this.ctx.stroke();
+        this.drawHorizontalLine(cellX, underlineY, cellWidth, '#4A90E2');
       }
     }
   }
@@ -831,6 +784,13 @@ export class CanvasRenderer {
     }
   }
 
+  // Stroke the current path using the current fillStyle (for soft/outline powerline dividers)
+  private strokeWithFillColor(ctx: CanvasRenderingContext2D): void {
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
   /**
    * Render Powerline glyphs as vector shapes for pixel-perfect cell height.
    * Powerline glyphs (U+E0B0-U+E0BF) are designed to span the full cell height,
@@ -862,9 +822,7 @@ export class CanvasRenderer {
         ctx.moveTo(cellX, cellY);
         ctx.lineTo(cellX + cellWidth, cellY + height / 2);
         ctx.lineTo(cellX, cellY + height);
-        ctx.strokeStyle = ctx.fillStyle;
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        this.strokeWithFillColor(ctx);
         return true;
 
       case 0xe0b2: // Left-pointing triangle (hard divider)
@@ -881,9 +839,7 @@ export class CanvasRenderer {
         ctx.moveTo(cellX + cellWidth, cellY);
         ctx.lineTo(cellX, cellY + height / 2);
         ctx.lineTo(cellX + cellWidth, cellY + height);
-        ctx.strokeStyle = ctx.fillStyle;
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        this.strokeWithFillColor(ctx);
         return true;
 
       case 0xe0b4: // Right semicircle (filled)
@@ -917,9 +873,7 @@ export class CanvasRenderer {
           Math.PI / 2,
           false
         );
-        ctx.strokeStyle = ctx.fillStyle;
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        this.strokeWithFillColor(ctx);
         return true;
 
       case 0xe0b6: // Left semicircle (filled) - rounded left cap
@@ -953,9 +907,7 @@ export class CanvasRenderer {
           Math.PI / 2,
           true
         );
-        ctx.strokeStyle = ctx.fillStyle;
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        this.strokeWithFillColor(ctx);
         return true;
 
       default:
@@ -1039,26 +991,6 @@ export class CanvasRenderer {
    */
   public setTheme(theme: ITheme): void {
     this.theme = { ...DEFAULT_THEME, ...theme };
-
-    // Rebuild palette
-    this.palette = [
-      this.theme.black,
-      this.theme.red,
-      this.theme.green,
-      this.theme.yellow,
-      this.theme.blue,
-      this.theme.magenta,
-      this.theme.cyan,
-      this.theme.white,
-      this.theme.brightBlack,
-      this.theme.brightRed,
-      this.theme.brightGreen,
-      this.theme.brightYellow,
-      this.theme.brightBlue,
-      this.theme.brightMagenta,
-      this.theme.brightCyan,
-      this.theme.brightWhite,
-    ];
   }
 
   /**
@@ -1066,6 +998,7 @@ export class CanvasRenderer {
    */
   public setFontSize(size: number): void {
     this.fontSize = size;
+    this.fontStrings = this.buildFontStrings();
     this.metrics = this.measureFont();
   }
 
@@ -1074,6 +1007,7 @@ export class CanvasRenderer {
    */
   public setFontFamily(family: string): void {
     this.fontFamily = family;
+    this.fontStrings = this.buildFontStrings();
     this.metrics = this.measureFont();
   }
 
@@ -1096,10 +1030,6 @@ export class CanvasRenderer {
       this.stopCursorBlink();
     }
   }
-
-  /**
-   * Get current font metrics
-   */
 
   /**
    * Render scrollbar (Phase 2)

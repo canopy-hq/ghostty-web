@@ -20,6 +20,16 @@ const DEMO_DIR = dirname(__dirname);
 const BASELINES_DIR = join(DEMO_DIR, 'baselines');
 const PROJECT_ROOT = dirname(DEMO_DIR);
 
+const CONTENT_TYPES: Record<string, string> = {
+  html: 'text/html',
+  js: 'application/javascript',
+  css: 'text/css',
+  json: 'application/json',
+  wasm: 'application/wasm',
+  png: 'image/png',
+  ttf: 'font/ttf',
+};
+
 // Parse args
 const args = process.argv.slice(2);
 const updateMode = args.includes('--update') || args.includes('-u');
@@ -88,19 +98,9 @@ async function main() {
       try {
         const file = Bun.file(filePath);
         if (await file.exists()) {
-          // Set content type based on extension
           const ext = filePath.split('.').pop() || '';
-          const contentTypes: Record<string, string> = {
-            html: 'text/html',
-            js: 'application/javascript',
-            css: 'text/css',
-            json: 'application/json',
-            wasm: 'application/wasm',
-            png: 'image/png',
-            ttf: 'font/ttf',
-          };
           return new Response(file, {
-            headers: { 'Content-Type': contentTypes[ext] || 'application/octet-stream' },
+            headers: { 'Content-Type': CONTENT_TYPES[ext] || 'application/octet-stream' },
           });
         }
       } catch {
