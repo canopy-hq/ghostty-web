@@ -67,20 +67,7 @@ interface TestResult {
 async function main() {
   console.log('🧪 Visual Render Test Runner\n');
 
-  // Dynamic import puppeteer (install if needed)
-  let puppeteer: typeof import('puppeteer');
-  try {
-    puppeteer = await import('puppeteer');
-  } catch {
-    console.log('📦 Installing puppeteer...');
-    const proc = Bun.spawn(['bun', 'add', '-d', 'puppeteer'], {
-      cwd: PROJECT_ROOT,
-      stdout: 'inherit',
-      stderr: 'inherit',
-    });
-    await proc.exited;
-    puppeteer = await import('puppeteer');
-  }
+  const puppeteer = await import('puppeteer');
 
   // Start local server
   console.log('🌐 Starting local server...');
@@ -178,9 +165,7 @@ async function main() {
         continue;
       }
 
-      // Convert data URL to buffer
-      const base64Data = canvasDataUrl.replace(/^data:image\/png;base64,/, '');
-      const currentBuffer = Buffer.from(base64Data, 'base64');
+      const currentBuffer = Buffer.from(canvasDataUrl.split(',')[1], 'base64');
 
       if (updateMode) {
         // Update mode: save current as baseline
@@ -251,28 +236,23 @@ async function main() {
 }
 
 /**
- * Calculate approximate difference percentage between two PNG buffers.
- * This is a simple comparison - for production you might want pixelmatch.
+ * Heuristic difference percentage between two PNG buffers (byte-level, not pixel-level).
+ * NOTE: compares compressed bytes — identical-looking renders with different metadata
+ * may produce non-zero results. Replace with pixelmatch for pixel-accurate comparison.
  */
 function calculateDiffPercent(buf1: Buffer, buf2: Buffer): number {
-  // Simple approach: compare decoded pixel data
-  // For a more accurate comparison, use a library like pixelmatch
-
-  // Quick heuristic based on buffer size difference and content
-  const sizeDiff = Math.abs(buf1.length - buf2.length);
   const maxSize = Math.max(buf1.length, buf2.length);
+  const sizeDiff = Math.abs(buf1.length - buf2.length);
 
   if (sizeDiff > 0) {
-    // Different sizes means different images
     return (sizeDiff / maxSize) * 100;
   }
 
-  // Compare bytes
+  const threshold = maxSize * 0.001; // 0.1%
   let diffBytes = 0;
-  const minLen = Math.min(buf1.length, buf2.length);
-  for (let i = 0; i < minLen; i++) {
-    if (buf1[i] !== buf2[i]) {
-      diffBytes++;
+  for (let i = 0; i < buf1.length; i++) {
+    if (buf1[i] !== buf2[i] && ++diffBytes > threshold) {
+      return (diffBytes / maxSize) * 100;
     }
   }
 

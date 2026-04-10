@@ -56,6 +56,8 @@ export interface FontMetrics {
   baseline: number; // Distance from top to text baseline
 }
 
+const LINK_HOVER_COLOR = '#4A90E2';
+
 // ============================================================================
 // Default Theme
 // ============================================================================
@@ -213,12 +215,12 @@ export class CanvasRenderer {
     // characters (U+E0B0, U+E0B6, etc.) which are designed to fill the full cell height.
     // Fall back to actual metrics if font metrics aren't available.
     const ascent =
-      widthMetrics.fontBoundingBoxAscent ||
-      widthMetrics.actualBoundingBoxAscent ||
+      widthMetrics.fontBoundingBoxAscent ??
+      widthMetrics.actualBoundingBoxAscent ??
       this.fontSize * 0.8;
     const descent =
-      widthMetrics.fontBoundingBoxDescent ||
-      widthMetrics.actualBoundingBoxDescent ||
+      widthMetrics.fontBoundingBoxDescent ??
+      widthMetrics.actualBoundingBoxDescent ??
       this.fontSize * 0.2;
 
     const height = Math.ceil(ascent + descent);
@@ -371,13 +373,10 @@ export class CanvasRenderer {
     // Track rows with hyperlinks that need redraw when hover changes
     const hyperlinkRows = new Set<number>();
     const hyperlinkChanged = this.hoveredHyperlinkId !== this.previousHoveredHyperlinkId;
-    const linkRangeChanged = (() => {
-      const a = this.hoveredLinkRange;
-      const b = this.previousHoveredLinkRange;
-      if (a === b) return false;
-      if (!a || !b) return true;
-      return a.startX !== b.startX || a.startY !== b.startY || a.endX !== b.endX || a.endY !== b.endY;
-    })();
+    const a = this.hoveredLinkRange, b = this.previousHoveredLinkRange;
+    const linkRangeChanged = a !== b && (
+      !a || !b || a.startX !== b.startX || a.startY !== b.startY || a.endX !== b.endX || a.endY !== b.endY
+    );
 
     if (hyperlinkChanged) {
       // Find rows containing the old or new hovered hyperlink
@@ -640,17 +639,19 @@ export class CanvasRenderer {
     );
 
     // Set text color - use override if provided, otherwise selection or cell color
+    let fillColor: string;
     if (colorOverride) {
-      this.ctx.fillStyle = colorOverride;
+      fillColor = colorOverride;
     } else if (isSelected) {
-      this.ctx.fillStyle = this.theme.selectionForeground;
+      fillColor = this.theme.selectionForeground;
     } else {
       let fg_r = cell.fg_r, fg_g = cell.fg_g, fg_b = cell.fg_b;
       if (cell.flags & CellFlags.INVERSE) {
         fg_r = cell.bg_r; fg_g = cell.bg_g; fg_b = cell.bg_b;
       }
-      this.ctx.fillStyle = this.rgbToCSS(fg_r, fg_g, fg_b);
+      fillColor = this.rgbToCSS(fg_r, fg_g, fg_b);
     }
+    this.ctx.fillStyle = fillColor;
 
     // Apply faint effect
     if (cell.flags & CellFlags.FAINT) {
@@ -668,7 +669,7 @@ export class CanvasRenderer {
     // - Powerline glyphs (U+E0B0-U+E0BF): vector shapes to match exact cell height
     if (codepoint >= 0x2580 && codepoint <= 0x259f && this.renderBlockChar(codepoint, cellX, cellY, cellWidth)) {
       // rendered as rectangle
-    } else if (codepoint >= 0xe0b0 && codepoint <= 0xe0bf && this.renderPowerlineGlyph(codepoint, cellX, cellY, cellWidth)) {
+    } else if (codepoint >= 0xe0b0 && codepoint <= 0xe0b7 && this.renderPowerlineGlyph(codepoint, cellX, cellY, cellWidth)) {
       // rendered as vector path
     } else {
       // Use grapheme lookup for complex scripts, single codepoint otherwise
@@ -684,7 +685,6 @@ export class CanvasRenderer {
       this.ctx.globalAlpha = 1.0;
     }
 
-    const fillColor = this.ctx.fillStyle as string;
     const underlineY = cellY + this.metrics.baseline + 2;
 
     if (cell.flags & CellFlags.UNDERLINE) {
@@ -694,7 +694,7 @@ export class CanvasRenderer {
       this.drawHorizontalLine(cellX, cellY + this.metrics.height / 2, cellWidth, fillColor);
     }
     if (cell.hyperlink_id > 0 && cell.hyperlink_id === this.hoveredHyperlinkId) {
-      this.drawHorizontalLine(cellX, underlineY, cellWidth, '#4A90E2');
+      this.drawHorizontalLine(cellX, underlineY, cellWidth, LINK_HOVER_COLOR);
     }
     if (this.hoveredLinkRange) {
       const range = this.hoveredLinkRange;
@@ -703,7 +703,7 @@ export class CanvasRenderer {
         (y > range.startY && y < range.endY) ||
         (y === range.endY && x <= range.endX && (y > range.startY || x >= range.startX));
       if (isInRange) {
-        this.drawHorizontalLine(cellX, underlineY, cellWidth, '#4A90E2');
+        this.drawHorizontalLine(cellX, underlineY, cellWidth, LINK_HOVER_COLOR);
       }
     }
   }
@@ -785,10 +785,10 @@ export class CanvasRenderer {
   }
 
   // Stroke the current path using the current fillStyle (for soft/outline powerline dividers)
-  private strokeWithFillColor(ctx: CanvasRenderingContext2D): void {
-    ctx.strokeStyle = ctx.fillStyle;
-    ctx.lineWidth = 1;
-    ctx.stroke();
+  private strokeWithFillColor(): void {
+    this.ctx.strokeStyle = this.ctx.fillStyle;
+    this.ctx.lineWidth = 1;
+    this.ctx.stroke();
   }
 
   /**
@@ -809,105 +809,39 @@ export class CanvasRenderer {
 
     switch (codepoint) {
       case 0xe0b0: // Right-pointing triangle (hard divider)
+      case 0xe0b1: // Right-pointing angle (soft divider)
         ctx.beginPath();
         ctx.moveTo(cellX, cellY);
         ctx.lineTo(cellX + cellWidth, cellY + height / 2);
         ctx.lineTo(cellX, cellY + height);
-        ctx.closePath();
-        ctx.fill();
-        return true;
-
-      case 0xe0b1: // Right-pointing angle (soft divider, thin)
-        ctx.beginPath();
-        ctx.moveTo(cellX, cellY);
-        ctx.lineTo(cellX + cellWidth, cellY + height / 2);
-        ctx.lineTo(cellX, cellY + height);
-        this.strokeWithFillColor(ctx);
+        if (codepoint === 0xe0b0) { ctx.closePath(); ctx.fill(); } else this.strokeWithFillColor();
         return true;
 
       case 0xe0b2: // Left-pointing triangle (hard divider)
+      case 0xe0b3: // Left-pointing angle (soft divider)
         ctx.beginPath();
         ctx.moveTo(cellX + cellWidth, cellY);
         ctx.lineTo(cellX, cellY + height / 2);
         ctx.lineTo(cellX + cellWidth, cellY + height);
-        ctx.closePath();
-        ctx.fill();
-        return true;
-
-      case 0xe0b3: // Left-pointing angle (soft divider, thin)
-        ctx.beginPath();
-        ctx.moveTo(cellX + cellWidth, cellY);
-        ctx.lineTo(cellX, cellY + height / 2);
-        ctx.lineTo(cellX + cellWidth, cellY + height);
-        this.strokeWithFillColor(ctx);
+        if (codepoint === 0xe0b2) { ctx.closePath(); ctx.fill(); } else this.strokeWithFillColor();
         return true;
 
       case 0xe0b4: // Right semicircle (filled)
-        ctx.beginPath();
-        ctx.moveTo(cellX, cellY);
-        // Ellipse curving right: center at left edge, radii = cellWidth (x) and height/2 (y)
-        ctx.ellipse(
-          cellX,
-          cellY + height / 2,
-          cellWidth,
-          height / 2,
-          0,
-          -Math.PI / 2,
-          Math.PI / 2,
-          false
-        );
-        ctx.closePath();
-        ctx.fill();
-        return true;
-
       case 0xe0b5: // Right semicircle (outline)
         ctx.beginPath();
         ctx.moveTo(cellX, cellY);
-        ctx.ellipse(
-          cellX,
-          cellY + height / 2,
-          cellWidth,
-          height / 2,
-          0,
-          -Math.PI / 2,
-          Math.PI / 2,
-          false
-        );
-        this.strokeWithFillColor(ctx);
+        // Ellipse curving right: center at left edge, radii = cellWidth (x) and height/2 (y)
+        ctx.ellipse(cellX, cellY + height / 2, cellWidth, height / 2, 0, -Math.PI / 2, Math.PI / 2, false);
+        if (codepoint === 0xe0b4) { ctx.closePath(); ctx.fill(); } else this.strokeWithFillColor();
         return true;
 
-      case 0xe0b6: // Left semicircle (filled) - rounded left cap
-        ctx.beginPath();
-        ctx.moveTo(cellX + cellWidth, cellY);
-        // Ellipse curving left: center at right edge, radii = cellWidth (x) and height/2 (y)
-        ctx.ellipse(
-          cellX + cellWidth,
-          cellY + height / 2,
-          cellWidth,
-          height / 2,
-          0,
-          -Math.PI / 2,
-          Math.PI / 2,
-          true
-        );
-        ctx.closePath();
-        ctx.fill();
-        return true;
-
+      case 0xe0b6: // Left semicircle (filled)
       case 0xe0b7: // Left semicircle (outline)
         ctx.beginPath();
         ctx.moveTo(cellX + cellWidth, cellY);
-        ctx.ellipse(
-          cellX + cellWidth,
-          cellY + height / 2,
-          cellWidth,
-          height / 2,
-          0,
-          -Math.PI / 2,
-          Math.PI / 2,
-          true
-        );
-        this.strokeWithFillColor(ctx);
+        // Ellipse curving left: center at right edge, radii = cellWidth (x) and height/2 (y)
+        ctx.ellipse(cellX + cellWidth, cellY + height / 2, cellWidth, height / 2, 0, -Math.PI / 2, Math.PI / 2, true);
+        if (codepoint === 0xe0b6) { ctx.closePath(); ctx.fill(); } else this.strokeWithFillColor();
         return true;
 
       default:
