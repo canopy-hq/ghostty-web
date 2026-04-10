@@ -420,7 +420,7 @@ export class GhosttyTerminal {
       viewportY: this.exports.ghostty_render_state_get_cursor_y(this.handle),
       visible: this.exports.ghostty_render_state_get_cursor_visible(this.handle),
       blinking: false, // TODO: Add blinking support
-      style: 'block', // TODO: Add style support
+      style: undefined, // TODO: Add style support via WASM
     };
   }
 
