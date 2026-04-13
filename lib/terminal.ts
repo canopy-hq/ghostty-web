@@ -796,20 +796,31 @@ export class Terminal implements ITerminalCore {
    * Writes continue to be processed by the WASM terminal; they will be rendered
    * on the next frame after resume() is called.
    *
+   * Also cancels any in-progress smooth-scroll animation — it will resume from
+   * its current position when resume() is called.
+   *
    * Intended for terminals that are mounted but not visible (e.g. inactive tabs).
    */
   suspend(): void {
     if (this.isSuspended || !this.isOpen) return;
     this.isSuspended = true;
     this.cancelRenderLoop();
+    if (this.scrollAnimationFrame) {
+      cancelAnimationFrame(this.scrollAnimationFrame);
+      this.scrollAnimationFrame = undefined;
+    }
   }
 
   /**
    * Resume rendering after a suspend() call.
+   * Restarts any scroll animation that was in progress when suspended.
    */
   resume(): void {
     if (!this.isSuspended || !this.isOpen) return;
     this.isSuspended = false;
+    if (this.scrollAnimationStartTime !== undefined && !this.scrollAnimationFrame) {
+      this.animateScroll();
+    }
     this.startRenderLoop();
   }
 
@@ -1142,6 +1153,7 @@ export class Terminal implements ITerminalCore {
 
     this.isDisposed = true;
     this.isOpen = false;
+    this.isSuspended = false;
 
     // Stop render loop and clear write queue
     this.cancelRenderLoop();
