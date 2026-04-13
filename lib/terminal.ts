@@ -101,6 +101,7 @@ export class Terminal implements ITerminalCore {
   // Lifecycle state
   private isOpen = false;
   private isDisposed = false;
+  private isSuspended = false;
   private animationFrameId?: number;
   private writeQueue: Uint8Array[] = [];
 
@@ -729,8 +730,11 @@ export class Terminal implements ITerminalCore {
     }
 
     // Flush any writes that were queued during resize, then restart render loop
+    // (unless the terminal is suspended, in which case rendering stays paused)
     this.flushWriteQueue();
-    this.startRenderLoop();
+    if (!this.isSuspended) {
+      this.startRenderLoop();
+    }
   }
 
   /**
@@ -785,6 +789,28 @@ export class Terminal implements ITerminalCore {
     if (this.isOpen && this.element) {
       this.element.blur();
     }
+  }
+
+  /**
+   * Suspend rendering. Stops the render loop without destroying terminal state.
+   * Writes continue to be processed by the WASM terminal; they will be rendered
+   * on the next frame after resume() is called.
+   *
+   * Intended for terminals that are mounted but not visible (e.g. inactive tabs).
+   */
+  suspend(): void {
+    if (this.isSuspended || !this.isOpen) return;
+    this.isSuspended = true;
+    this.cancelRenderLoop();
+  }
+
+  /**
+   * Resume rendering after a suspend() call.
+   */
+  resume(): void {
+    if (!this.isSuspended || !this.isOpen) return;
+    this.isSuspended = false;
+    this.startRenderLoop();
   }
 
   /**
