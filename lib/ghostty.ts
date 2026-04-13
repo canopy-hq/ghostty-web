@@ -169,16 +169,17 @@ export class Ghostty {
 
     if (typeof WebAssembly.instantiateStreaming === 'function') {
       try {
-        // `streamingInstance` is declared with `let` so the log callback can
-        // close over it safely. It is set immediately after the await resolves;
-        // log is only invoked by WASM after full instantiation.
-        let streamingInstance: WebAssembly.Instance | undefined;
+        // Use a mutable ref object so the log callback can close over a const
+        // and still access the instance after the await resolves.
+        // log is only invoked by WASM after full instantiation, so ref.instance
+        // is always set by the time it is called.
+        const ref: { instance?: WebAssembly.Instance } = {};
         const { instance } = await WebAssembly.instantiateStreaming(response, {
           env: {
             log: (ptr: number, len: number) => {
-              if (!streamingInstance) return;
+              if (!ref.instance) return;
               const data = new Uint8Array(
-                (streamingInstance.exports as GhosttyWasmExports).memory.buffer,
+                (ref.instance.exports as GhosttyWasmExports).memory.buffer,
                 ptr,
                 len
               );
@@ -186,7 +187,7 @@ export class Ghostty {
             },
           },
         });
-        streamingInstance = instance;
+        ref.instance = instance;
         return new Ghostty(instance);
       } catch {
         // Content-Type mismatch or streaming not supported — fall through.

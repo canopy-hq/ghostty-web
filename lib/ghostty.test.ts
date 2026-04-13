@@ -82,8 +82,8 @@ describe('Ghostty.loadFromResponse', () => {
     streamingSpy.mockImplementation(undefined);
     // Override typeof check by temporarily deleting the property
     const original = WebAssembly.instantiateStreaming;
-    // @ts-expect-error
-    delete WebAssembly.instantiateStreaming;
+    // @ts-expect-error — simulate environments where the API doesn't exist
+    WebAssembly.instantiateStreaming = undefined;
 
     try {
       const response = new Response(new ArrayBuffer(8), {
