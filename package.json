@@ -12,7 +12,8 @@
       "import": "./dist/ghostty-web.js",
       "require": "./dist/ghostty-web.umd.cjs"
     },
-    "./ghostty-vt.wasm": "./ghostty-vt.wasm"
+    "./ghostty-vt.wasm": "./ghostty-vt.wasm",
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
