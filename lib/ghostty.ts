@@ -36,6 +36,9 @@ export {
   type RenderStateCursor,
 };
 
+// Reused across all WASM log callbacks — TextDecoder is stateless but expensive to construct.
+const wasmLogDecoder = new TextDecoder();
+
 /**
  * Main Ghostty WASM wrapper class
  */
@@ -139,19 +142,89 @@ export class Ghostty {
     }
 
     const wasmModule = await WebAssembly.compile(wasmBytes);
-    const wasmInstance = await WebAssembly.instantiate(wasmModule, {
-      env: {
-        log: (ptr: number, len: number) => {
-          const bytes = new Uint8Array(
-            (wasmInstance.exports as GhosttyWasmExports).memory.buffer,
-            ptr,
-            len
-          );
-          console.log('[ghostty-vt]', new TextDecoder().decode(bytes));
+    return Ghostty._instantiateFromModule(wasmModule);
+  }
+
+  /**
+   * Load and instantiate the Ghostty WASM module from a pre-fetched ArrayBuffer.
+   *
+   * This is the fast path when bytes are already available (e.g. from an
+   * IndexedDB cache). It skips the fetch round-trip but still compiles the
+   * module — use `loadFromResponse` to also overlap compilation with the
+   * download via `instantiateStreaming`.
+   */
+  static async loadFromBytes(bytes: ArrayBuffer): Promise<Ghostty> {
+    const wasmModule = await WebAssembly.compile(bytes);
+    return Ghostty._instantiateFromModule(wasmModule);
+  }
+
+  /**
+   * Load and instantiate the Ghostty WASM module from a fetch `Response`.
+   *
+   * Uses `WebAssembly.instantiateStreaming` when the response carries the
+   * required `Content-Type: application/wasm` header, allowing compilation
+   * to overlap with the download. Falls back to `arrayBuffer()` + `compile`
+   * if streaming is unavailable or the Content-Type is wrong.
+   */
+  static async loadFromResponse(response: Response): Promise<Ghostty> {
+    if (typeof WebAssembly.instantiateStreaming === 'function') {
+      // Clone only when streaming is attempted so the body is available on fallback.
+      const responseClone = response.clone();
+      try {
+        const { imports, setInstance } = Ghostty._makeImports();
+        const { instance } = await WebAssembly.instantiateStreaming(response, imports);
+        setInstance(instance);
+        return new Ghostty(instance);
+      } catch {
+        // Content-Type mismatch or streaming not supported — fall through.
+        const bytes = await responseClone.arrayBuffer();
+        return Ghostty.loadFromBytes(bytes);
+      }
+    }
+    const bytes = await response.arrayBuffer();
+    return Ghostty.loadFromBytes(bytes);
+  }
+
+  /**
+   * Compile and instantiate a pre-compiled WASM module.
+   * Shared by `loadFromPath`, `loadFromBytes`, and the streaming fallback.
+   */
+  private static async _instantiateFromModule(wasmModule: WebAssembly.Module): Promise<Ghostty> {
+    const { imports, setInstance } = Ghostty._makeImports();
+    const wasmInstance = await WebAssembly.instantiate(wasmModule, imports);
+    setInstance(wasmInstance);
+    return new Ghostty(wasmInstance);
+  }
+
+  /**
+   * Build the WebAssembly imports object with the WASM-to-host `log` callback.
+   * Returns a `setInstance` setter that must be called after instantiation so
+   * the callback can access the instance's memory buffer.
+   * Safe because WASM only calls `log` after full instantiation.
+   */
+  private static _makeImports(): {
+    imports: WebAssembly.Imports;
+    setInstance: (i: WebAssembly.Instance) => void;
+  } {
+    const ref: { instance?: WebAssembly.Instance } = {};
+    return {
+      imports: {
+        env: {
+          log: (ptr: number, len: number) => {
+            if (!ref.instance) return;
+            const data = new Uint8Array(
+              (ref.instance.exports as GhosttyWasmExports).memory.buffer,
+              ptr,
+              len
+            );
+            console.log('[ghostty-vt]', wasmLogDecoder.decode(data));
+          },
         },
       },
-    });
-    return new Ghostty(wasmInstance);
+      setInstance: (i: WebAssembly.Instance) => {
+        ref.instance = i;
+      },
+    };
   }
 }
 
