@@ -35,7 +35,7 @@ import type {
 import { LinkDetector } from './link-detector';
 import { OSC8LinkProvider } from './providers/osc8-link-provider';
 import { UrlRegexProvider } from './providers/url-regex-provider';
-import { CanvasRenderer, DEFAULT_THEME } from './renderer';
+import { CanvasRenderer, DEFAULT_SCROLLBAR_WIDTH, DEFAULT_THEME } from './renderer';
 import { SelectionManager } from './selection-manager';
 import type { ILink, ILinkProvider } from './types';
 
@@ -87,6 +87,7 @@ export class Terminal implements ITerminalCore {
   private scrollEmitter = new EventEmitter<number>();
   private renderEmitter = new EventEmitter<{ start: number; end: number }>();
   private cursorMoveEmitter = new EventEmitter<void>();
+  private openEmitter = new EventEmitter<void>();
   // Public event accessors (xterm.js compatibility)
   public readonly onData: IEvent<string> = this.dataEmitter.event;
   public readonly onResize: IEvent<{ cols: number; rows: number }> = this.resizeEmitter.event;
@@ -97,6 +98,8 @@ export class Terminal implements ITerminalCore {
   public readonly onScroll: IEvent<number> = this.scrollEmitter.event;
   public readonly onRender: IEvent<{ start: number; end: number }> = this.renderEmitter.event;
   public readonly onCursorMove: IEvent<void> = this.cursorMoveEmitter.event;
+  /** Fired once when the terminal is mounted to the DOM and ready to receive input. */
+  public readonly onOpen: IEvent<void> = this.openEmitter.event;
 
   // Lifecycle state
   private isOpen = false;
@@ -454,6 +457,7 @@ export class Terminal implements ITerminalCore {
         cursorStyle: this.options.cursorStyle,
         cursorBlink: this.options.cursorBlink,
         theme: this.options.theme,
+        scrollbarWidth: this.options.scrollbarWidth,
       });
 
       // Size canvas to terminal dimensions (use renderer.resize for proper DPI scaling)
@@ -555,6 +559,11 @@ export class Terminal implements ITerminalCore {
 
       // Start render loop
       this.startRenderLoop();
+
+      // Notify listeners that the terminal is mounted and ready for input.
+      // Dispose immediately after — onOpen fires exactly once, releasing subscriber closures.
+      this.openEmitter.fire();
+      this.openEmitter.dispose();
 
       // Focus input (auto-focus so user can start typing immediately)
       this.focus();
@@ -1675,6 +1684,9 @@ export class Terminal implements ITerminalCore {
   private handleMouseDown = (e: MouseEvent): void => {
     if (!this.canvas || !this.renderer || !this.wasmTerm) return;
 
+    const scrollbarWidth = this.options.scrollbarWidth ?? DEFAULT_SCROLLBAR_WIDTH;
+    if (scrollbarWidth === 0) return;
+
     const scrollbackLength = this.wasmTerm.getScrollbackLength();
     if (scrollbackLength === 0) return; // No scrollbar if no scrollback
 
@@ -1686,7 +1698,6 @@ export class Terminal implements ITerminalCore {
     // Use rect dimensions which are already in CSS pixels
     const canvasWidth = rect.width;
     const canvasHeight = rect.height;
-    const scrollbarWidth = 8;
     const scrollbarX = canvasWidth - scrollbarWidth - 4;
     const scrollbarPadding = 4;
 
