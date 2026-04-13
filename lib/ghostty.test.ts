@@ -78,9 +78,7 @@ describe('Ghostty.loadFromResponse', () => {
   });
 
   test('falls back to compile + instantiate when instantiateStreaming is unavailable', async () => {
-    // @ts-expect-error — simulating environments where the API doesn't exist
-    streamingSpy.mockImplementation(undefined);
-    // Override typeof check by temporarily deleting the property
+    // Override the property directly so the typeof check in loadFromResponse returns false.
     const original = WebAssembly.instantiateStreaming;
     // @ts-expect-error — simulate environments where the API doesn't exist
     WebAssembly.instantiateStreaming = undefined;

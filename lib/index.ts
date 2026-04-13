@@ -36,7 +36,11 @@ export async function init(wasmPath?: string): Promise<void> {
  * Initialize ghostty-web from a pre-fetched `ArrayBuffer` (e.g. from an
  * IndexedDB cache). Skips the fetch but still compiles the module.
  *
- * No-op if `init()` or `initFromResponse()` has already been called.
+ * No-op if the singleton is already set, but **deduplication of concurrent
+ * calls is the caller's responsibility** — two overlapping awaits will both
+ * proceed past the guard and the second will overwrite the first. Wrap this
+ * in a shared promise (e.g. `if (!ready) ready = initFromBytes(...)`) to
+ * guarantee at-most-once execution.
  */
 export async function initFromBytes(bytes: ArrayBuffer): Promise<void> {
   if (ghosttyInstance) return;
@@ -49,7 +53,8 @@ export async function initFromBytes(bytes: ArrayBuffer): Promise<void> {
  * is set so compilation overlaps with the download. Falls back to
  * `arrayBuffer()` + `compile` if the header is missing.
  *
- * No-op if `init()` or `initFromBytes()` has already been called.
+ * Same deduplication contract as `initFromBytes`: concurrent callers must
+ * coordinate externally (e.g. via a shared promise).
  */
 export async function initFromResponse(response: Response): Promise<void> {
   if (ghosttyInstance) return;

@@ -203,14 +203,18 @@ export class Ghostty {
    * Shared by `loadFromPath`, `loadFromBytes`, and the streaming fallback.
    */
   private static async _instantiateFromModule(wasmModule: WebAssembly.Module): Promise<Ghostty> {
-    // The log callback captures `wasmInstance` via closure. TypeScript does not
-    // enforce TDZ inside closures, and in practice log is only callable after
-    // instantiation completes (ghostty-vt has no start function that logs).
+    // Use a mutable ref object so the log callback can close over a const and
+    // still access the instance after the await resolves — consistent with the
+    // pattern used in loadFromResponse.
+    // log is only invoked by WASM after full instantiation (ghostty-vt has no
+    // start function that logs), so ref.instance is always set by call time.
+    const ref: { instance?: WebAssembly.Instance } = {};
     const wasmInstance = await WebAssembly.instantiate(wasmModule, {
       env: {
         log: (ptr: number, len: number) => {
+          if (!ref.instance) return;
           const data = new Uint8Array(
-            (wasmInstance.exports as GhosttyWasmExports).memory.buffer,
+            (ref.instance.exports as GhosttyWasmExports).memory.buffer,
             ptr,
             len
           );
@@ -218,6 +222,7 @@ export class Ghostty {
         },
       },
     });
+    ref.instance = wasmInstance;
     return new Ghostty(wasmInstance);
   }
 }
