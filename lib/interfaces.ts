@@ -70,6 +70,8 @@ export interface ITerminalCore {
   rows: number;
   element?: HTMLElement;
   textarea?: HTMLTextAreaElement;
+  suspend(): void;
+  resume(): void;
 }
 
 /**

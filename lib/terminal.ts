@@ -101,6 +101,7 @@ export class Terminal implements ITerminalCore {
   // Lifecycle state
   private isOpen = false;
   private isDisposed = false;
+  private isSuspended = false;
   private animationFrameId?: number;
   private writeQueue: Uint8Array[] = [];
 
@@ -730,7 +731,9 @@ export class Terminal implements ITerminalCore {
 
     // Flush any writes that were queued during resize, then restart render loop
     this.flushWriteQueue();
-    this.startRenderLoop();
+    if (!this.isSuspended) {
+      this.startRenderLoop();
+    }
   }
 
   /**
@@ -785,6 +788,36 @@ export class Terminal implements ITerminalCore {
     if (this.isOpen && this.element) {
       this.element.blur();
     }
+  }
+
+  /**
+   * Suspend rendering. Stops the render loop without destroying terminal state.
+   * Writes continue to be processed by the WASM terminal; they will be rendered
+   * on the next frame after resume() is called.
+   *
+   * Also cancels any in-progress smooth-scroll animation — it will resume from
+   * its current position when resume() is called.
+   *
+   * Intended for terminals that are mounted but not visible (e.g. inactive tabs).
+   */
+  suspend(): void {
+    if (this.isSuspended || !this.isOpen) return;
+    this.isSuspended = true;
+    this.cancelRenderLoop();
+    this.cancelScrollAnimation();
+  }
+
+  /**
+   * Resume rendering after a suspend() call.
+   * Restarts any scroll animation that was in progress when suspended.
+   */
+  resume(): void {
+    if (!this.isSuspended || !this.isOpen) return;
+    this.isSuspended = false;
+    if (this.scrollAnimationStartTime !== undefined && !this.scrollAnimationFrame) {
+      this.animateScroll();
+    }
+    this.startRenderLoop();
   }
 
   /**
@@ -1116,16 +1149,14 @@ export class Terminal implements ITerminalCore {
 
     this.isDisposed = true;
     this.isOpen = false;
+    this.isSuspended = false;
 
     // Stop render loop and clear write queue
     this.cancelRenderLoop();
     this.writeQueue.length = 0;
 
     // Stop smooth scroll animation
-    if (this.scrollAnimationFrame) {
-      cancelAnimationFrame(this.scrollAnimationFrame);
-      this.scrollAnimationFrame = undefined;
-    }
+    this.cancelScrollAnimation();
 
     // Clear mouse move throttle timeout
     if (this.mouseMoveThrottleTimeout) {
@@ -1166,6 +1197,13 @@ export class Terminal implements ITerminalCore {
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = undefined;
+    }
+  }
+
+  private cancelScrollAnimation(): void {
+    if (this.scrollAnimationFrame) {
+      cancelAnimationFrame(this.scrollAnimationFrame);
+      this.scrollAnimationFrame = undefined;
     }
   }
 
