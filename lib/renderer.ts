@@ -41,6 +41,8 @@ export interface IScrollbackProvider {
 // Type Definitions
 // ============================================================================
 
+export const DEFAULT_SCROLLBAR_WIDTH = 8;
+
 export interface RendererOptions {
   fontSize?: number; // Default: 15
   fontFamily?: string; // Default: 'monospace'
@@ -48,7 +50,7 @@ export interface RendererOptions {
   cursorBlink?: boolean; // Default: false
   theme?: ITheme;
   devicePixelRatio?: number; // Default: window.devicePixelRatio
-  scrollbarWidth?: number; // Default: 8, 0 = hidden
+  scrollbarWidth?: number; // 0 = hidden
 }
 
 export interface FontMetrics {
@@ -157,7 +159,7 @@ export class CanvasRenderer {
     this.cursorBlink = options.cursorBlink ?? false;
     this.theme = { ...DEFAULT_THEME, ...options.theme };
     this.devicePixelRatio = options.devicePixelRatio ?? window.devicePixelRatio ?? 1;
-    this.scrollbarWidth = options.scrollbarWidth ?? 8;
+    this.scrollbarWidth = options.scrollbarWidth ?? DEFAULT_SCROLLBAR_WIDTH;
 
     // Measure font metrics (also builds cached font strings)
     this.fontStrings = this.buildFontStrings();

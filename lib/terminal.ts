@@ -35,7 +35,7 @@ import type {
 import { LinkDetector } from './link-detector';
 import { OSC8LinkProvider } from './providers/osc8-link-provider';
 import { UrlRegexProvider } from './providers/url-regex-provider';
-import { CanvasRenderer, DEFAULT_THEME } from './renderer';
+import { CanvasRenderer, DEFAULT_SCROLLBAR_WIDTH, DEFAULT_THEME } from './renderer';
 import { SelectionManager } from './selection-manager';
 import type { ILink, ILinkProvider } from './types';
 
@@ -560,8 +560,10 @@ export class Terminal implements ITerminalCore {
       // Start render loop
       this.startRenderLoop();
 
-      // Notify listeners that the terminal is mounted and ready for input
+      // Notify listeners that the terminal is mounted and ready for input.
+      // Dispose immediately after — onOpen fires exactly once, releasing subscriber closures.
       this.openEmitter.fire();
+      this.openEmitter.dispose();
 
       // Focus input (auto-focus so user can start typing immediately)
       this.focus();
@@ -1191,7 +1193,6 @@ export class Terminal implements ITerminalCore {
     this.scrollEmitter.dispose();
     this.renderEmitter.dispose();
     this.cursorMoveEmitter.dispose();
-    this.openEmitter.dispose();
   }
 
   // ==========================================================================
@@ -1683,8 +1684,8 @@ export class Terminal implements ITerminalCore {
   private handleMouseDown = (e: MouseEvent): void => {
     if (!this.canvas || !this.renderer || !this.wasmTerm) return;
 
-    const scrollbarWidth = this.options.scrollbarWidth ?? 8;
-    if (scrollbarWidth === 0) return; // Scrollbar disabled
+    const scrollbarWidth = this.options.scrollbarWidth ?? DEFAULT_SCROLLBAR_WIDTH;
+    if (scrollbarWidth === 0) return;
 
     const scrollbackLength = this.wasmTerm.getScrollbackLength();
     if (scrollbackLength === 0) return; // No scrollbar if no scrollback

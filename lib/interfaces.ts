@@ -21,7 +21,7 @@ export interface ITerminalOptions {
 
   // Scrolling options
   smoothScrollDuration?: number; // Duration in ms for smooth scroll animation (default: 100, 0 = instant)
-  scrollbarWidth?: number; // Width of the scrollbar in pixels (default: 8, 0 = hidden)
+  scrollbarWidth?: number; // 0 = hidden, default: 8
 
   // Internal: Ghostty WASM instance (optional, for test isolation)
   // If not provided, uses the module-level instance from init()
