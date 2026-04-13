@@ -139,15 +139,81 @@ export class Ghostty {
     }
 
     const wasmModule = await WebAssembly.compile(wasmBytes);
+    return Ghostty._instantiateFromModule(wasmModule);
+  }
+
+  /**
+   * Load and instantiate the Ghostty WASM module from a pre-fetched ArrayBuffer.
+   *
+   * This is the fast path when bytes are already available (e.g. from an
+   * IndexedDB cache). It skips the fetch round-trip but still compiles the
+   * module — use `loadFromResponse` to also overlap compilation with the
+   * download via `instantiateStreaming`.
+   */
+  static async loadFromBytes(bytes: ArrayBuffer): Promise<Ghostty> {
+    const wasmModule = await WebAssembly.compile(bytes);
+    return Ghostty._instantiateFromModule(wasmModule);
+  }
+
+  /**
+   * Load and instantiate the Ghostty WASM module from a fetch `Response`.
+   *
+   * Uses `WebAssembly.instantiateStreaming` when the response carries the
+   * required `Content-Type: application/wasm` header, allowing compilation
+   * to overlap with the download. Falls back to `arrayBuffer()` + `compile`
+   * if streaming is unavailable or the Content-Type is wrong.
+   */
+  static async loadFromResponse(response: Response): Promise<Ghostty> {
+    // Clone before attempting streaming so we still have the body if it fails.
+    const responseClone = response.clone();
+
+    if (typeof WebAssembly.instantiateStreaming === 'function') {
+      try {
+        // `streamingInstance` is declared with `let` so the log callback can
+        // close over it safely. It is set immediately after the await resolves;
+        // log is only invoked by WASM after full instantiation.
+        let streamingInstance: WebAssembly.Instance | undefined;
+        const { instance } = await WebAssembly.instantiateStreaming(response, {
+          env: {
+            log: (ptr: number, len: number) => {
+              if (!streamingInstance) return;
+              const data = new Uint8Array(
+                (streamingInstance.exports as GhosttyWasmExports).memory.buffer,
+                ptr,
+                len
+              );
+              console.log('[ghostty-vt]', new TextDecoder().decode(data));
+            },
+          },
+        });
+        streamingInstance = instance;
+        return new Ghostty(instance);
+      } catch {
+        // Content-Type mismatch or streaming not supported — fall through.
+      }
+    }
+
+    const bytes = await responseClone.arrayBuffer();
+    return Ghostty.loadFromBytes(bytes);
+  }
+
+  /**
+   * Compile and instantiate a pre-compiled WASM module.
+   * Shared by `loadFromPath`, `loadFromBytes`, and the streaming fallback.
+   */
+  private static async _instantiateFromModule(wasmModule: WebAssembly.Module): Promise<Ghostty> {
+    // The log callback captures `wasmInstance` via closure. TypeScript does not
+    // enforce TDZ inside closures, and in practice log is only callable after
+    // instantiation completes (ghostty-vt has no start function that logs).
     const wasmInstance = await WebAssembly.instantiate(wasmModule, {
       env: {
         log: (ptr: number, len: number) => {
-          const bytes = new Uint8Array(
+          const data = new Uint8Array(
             (wasmInstance.exports as GhosttyWasmExports).memory.buffer,
             ptr,
             len
           );
-          console.log('[ghostty-vt]', new TextDecoder().decode(bytes));
+          console.log('[ghostty-vt]', new TextDecoder().decode(data));
         },
       },
     });

@@ -25,11 +25,35 @@ let ghosttyInstance: Ghostty | null = null;
  * term.open(document.getElementById('terminal'));
  * ```
  */
-export async function init(): Promise<void> {
+export async function init(wasmPath?: string): Promise<void> {
   if (ghosttyInstance) {
     return; // Already initialized
   }
-  ghosttyInstance = await Ghostty.load();
+  ghosttyInstance = await Ghostty.load(wasmPath);
+}
+
+/**
+ * Initialize ghostty-web from a pre-fetched `ArrayBuffer` (e.g. from an
+ * IndexedDB cache). Skips the fetch but still compiles the module.
+ *
+ * No-op if `init()` or `initFromResponse()` has already been called.
+ */
+export async function initFromBytes(bytes: ArrayBuffer): Promise<void> {
+  if (ghosttyInstance) return;
+  ghosttyInstance = await Ghostty.loadFromBytes(bytes);
+}
+
+/**
+ * Initialize ghostty-web from a fetch `Response`, using
+ * `WebAssembly.instantiateStreaming` when `Content-Type: application/wasm`
+ * is set so compilation overlaps with the download. Falls back to
+ * `arrayBuffer()` + `compile` if the header is missing.
+ *
+ * No-op if `init()` or `initFromBytes()` has already been called.
+ */
+export async function initFromResponse(response: Response): Promise<void> {
+  if (ghosttyInstance) return;
+  ghosttyInstance = await Ghostty.loadFromResponse(response);
 }
 
 /**
