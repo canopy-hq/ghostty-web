@@ -730,7 +730,6 @@ export class Terminal implements ITerminalCore {
     }
 
     // Flush any writes that were queued during resize, then restart render loop
-    // (unless the terminal is suspended, in which case rendering stays paused)
     this.flushWriteQueue();
     if (!this.isSuspended) {
       this.startRenderLoop();
@@ -805,10 +804,7 @@ export class Terminal implements ITerminalCore {
     if (this.isSuspended || !this.isOpen) return;
     this.isSuspended = true;
     this.cancelRenderLoop();
-    if (this.scrollAnimationFrame) {
-      cancelAnimationFrame(this.scrollAnimationFrame);
-      this.scrollAnimationFrame = undefined;
-    }
+    this.cancelScrollAnimation();
   }
 
   /**
@@ -1160,10 +1156,7 @@ export class Terminal implements ITerminalCore {
     this.writeQueue.length = 0;
 
     // Stop smooth scroll animation
-    if (this.scrollAnimationFrame) {
-      cancelAnimationFrame(this.scrollAnimationFrame);
-      this.scrollAnimationFrame = undefined;
-    }
+    this.cancelScrollAnimation();
 
     // Clear mouse move throttle timeout
     if (this.mouseMoveThrottleTimeout) {
@@ -1204,6 +1197,13 @@ export class Terminal implements ITerminalCore {
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = undefined;
+    }
+  }
+
+  private cancelScrollAnimation(): void {
+    if (this.scrollAnimationFrame) {
+      cancelAnimationFrame(this.scrollAnimationFrame);
+      this.scrollAnimationFrame = undefined;
     }
   }
 
