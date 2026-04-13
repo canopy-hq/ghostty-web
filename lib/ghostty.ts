@@ -36,6 +36,9 @@ export {
   type RenderStateCursor,
 };
 
+// Reused across all WASM log callbacks — TextDecoder is stateless but expensive to construct.
+const wasmLogDecoder = new TextDecoder();
+
 /**
  * Main Ghostty WASM wrapper class
  */
@@ -164,37 +167,21 @@ export class Ghostty {
    * if streaming is unavailable or the Content-Type is wrong.
    */
   static async loadFromResponse(response: Response): Promise<Ghostty> {
-    // Clone before attempting streaming so we still have the body if it fails.
-    const responseClone = response.clone();
-
     if (typeof WebAssembly.instantiateStreaming === 'function') {
+      // Clone only when streaming is attempted so the body is available on fallback.
+      const responseClone = response.clone();
       try {
-        // Use a mutable ref object so the log callback can close over a const
-        // and still access the instance after the await resolves.
-        // log is only invoked by WASM after full instantiation, so ref.instance
-        // is always set by the time it is called.
-        const ref: { instance?: WebAssembly.Instance } = {};
-        const { instance } = await WebAssembly.instantiateStreaming(response, {
-          env: {
-            log: (ptr: number, len: number) => {
-              if (!ref.instance) return;
-              const data = new Uint8Array(
-                (ref.instance.exports as GhosttyWasmExports).memory.buffer,
-                ptr,
-                len
-              );
-              console.log('[ghostty-vt]', new TextDecoder().decode(data));
-            },
-          },
-        });
-        ref.instance = instance;
+        const { imports, setInstance } = Ghostty._makeImports();
+        const { instance } = await WebAssembly.instantiateStreaming(response, imports);
+        setInstance(instance);
         return new Ghostty(instance);
       } catch {
         // Content-Type mismatch or streaming not supported — fall through.
+        const bytes = await responseClone.arrayBuffer();
+        return Ghostty.loadFromBytes(bytes);
       }
     }
-
-    const bytes = await responseClone.arrayBuffer();
+    const bytes = await response.arrayBuffer();
     return Ghostty.loadFromBytes(bytes);
   }
 
@@ -203,27 +190,41 @@ export class Ghostty {
    * Shared by `loadFromPath`, `loadFromBytes`, and the streaming fallback.
    */
   private static async _instantiateFromModule(wasmModule: WebAssembly.Module): Promise<Ghostty> {
-    // Use a mutable ref object so the log callback can close over a const and
-    // still access the instance after the await resolves — consistent with the
-    // pattern used in loadFromResponse.
-    // log is only invoked by WASM after full instantiation (ghostty-vt has no
-    // start function that logs), so ref.instance is always set by call time.
+    const { imports, setInstance } = Ghostty._makeImports();
+    const wasmInstance = await WebAssembly.instantiate(wasmModule, imports);
+    setInstance(wasmInstance);
+    return new Ghostty(wasmInstance);
+  }
+
+  /**
+   * Build the WebAssembly imports object with the WASM-to-host `log` callback.
+   * Returns a `setInstance` setter that must be called after instantiation so
+   * the callback can access the instance's memory buffer.
+   * Safe because WASM only calls `log` after full instantiation.
+   */
+  private static _makeImports(): {
+    imports: WebAssembly.Imports;
+    setInstance: (i: WebAssembly.Instance) => void;
+  } {
     const ref: { instance?: WebAssembly.Instance } = {};
-    const wasmInstance = await WebAssembly.instantiate(wasmModule, {
-      env: {
-        log: (ptr: number, len: number) => {
-          if (!ref.instance) return;
-          const data = new Uint8Array(
-            (ref.instance.exports as GhosttyWasmExports).memory.buffer,
-            ptr,
-            len
-          );
-          console.log('[ghostty-vt]', new TextDecoder().decode(data));
+    return {
+      imports: {
+        env: {
+          log: (ptr: number, len: number) => {
+            if (!ref.instance) return;
+            const data = new Uint8Array(
+              (ref.instance.exports as GhosttyWasmExports).memory.buffer,
+              ptr,
+              len
+            );
+            console.log('[ghostty-vt]', wasmLogDecoder.decode(data));
+          },
         },
       },
-    });
-    ref.instance = wasmInstance;
-    return new Ghostty(wasmInstance);
+      setInstance: (i: WebAssembly.Instance) => {
+        ref.instance = i;
+      },
+    };
   }
 }
 
