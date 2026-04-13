@@ -48,6 +48,7 @@ export interface RendererOptions {
   cursorBlink?: boolean; // Default: false
   theme?: ITheme;
   devicePixelRatio?: number; // Default: window.devicePixelRatio
+  scrollbarWidth?: number; // Default: 8, 0 = hidden
 }
 
 export interface FontMetrics {
@@ -102,6 +103,7 @@ export class CanvasRenderer {
   private cursorBlink: boolean;
   private theme: Required<ITheme>;
   private devicePixelRatio: number;
+  private scrollbarWidth: number;
   private metrics: FontMetrics;
   private fontStrings: { plain: string; bold: string; italic: string; boldItalic: string };
 
@@ -155,6 +157,7 @@ export class CanvasRenderer {
     this.cursorBlink = options.cursorBlink ?? false;
     this.theme = { ...DEFAULT_THEME, ...options.theme };
     this.devicePixelRatio = options.devicePixelRatio ?? window.devicePixelRatio ?? 1;
+    this.scrollbarWidth = options.scrollbarWidth ?? 8;
 
     // Measure font metrics (also builds cached font strings)
     this.fontStrings = this.buildFontStrings();
@@ -517,7 +520,7 @@ export class CanvasRenderer {
     }
 
     // Render scrollbar if scrolled or scrollback exists (with opacity for fade effect)
-    if (scrollbackProvider && scrollbarOpacity > 0) {
+    if (scrollbackProvider && scrollbarOpacity > 0 && this.scrollbarWidth > 0) {
       this.renderScrollbar(viewportY, scrollbackLength, dims.rows, scrollbarOpacity);
     }
 
@@ -1029,7 +1032,7 @@ export class CanvasRenderer {
     const canvasWidth = this.canvas.width / this.devicePixelRatio;
 
     // Scrollbar dimensions
-    const scrollbarWidth = 8;
+    const scrollbarWidth = this.scrollbarWidth;
     const scrollbarX = canvasWidth - scrollbarWidth - 4;
     const scrollbarPadding = 4;
     const scrollbarTrackHeight = canvasHeight - scrollbarPadding * 2;
